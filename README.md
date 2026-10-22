@@ -1,13 +1,14 @@
-# 🦺 Smart Mining Helmet - Real-time Safety Monitoring System
+# Smart Mining Helmet
 
-![Dashboard Screenshot](./Untitled.jpg)
+![Smart Mining Helmet dashboard](./dashboard.jpg)
 
-> A comprehensive IoT-based safety monitoring system for mining operations that tracks environmental hazards and miner health in real-time using an Arduino-based smart helmet with multi-sensor integration and cloud dashboarding.
+> An IoT safety monitoring system that combines ESP32 sensor telemetry, a Node.js API, SQLite persistence, and a responsive React dashboard for mining operations.
 
 ## 📋 Table of Contents
 
 - [Project Overview](#project-overview)
 - [Features](#features)
+- [Dashboard Screens](#dashboard-screens)
 - [System Architecture](#system-architecture)
 - [Hardware Components](#hardware-components)
 - [Project Structure](#project-structure)
@@ -23,13 +24,13 @@
 
 ## 🎯 Project Overview
 
-**Smart Mining Helmet** is an advanced safety system designed for mining operations. It continuously monitors:
+**Smart Mining Helmet** is designed to help operators monitor a miner's environment and location from a browser. The current dashboard monitors:
 
-- **Environmental Hazards**: Oxygen levels, CO2, CO, Methane, and H2S gas concentrations
-- **Miner Health**: Heart rate, temperature, and humidity
-- **Location Tracking**: GPS coordinates for emergency rescue operations
-- **Physical Safety**: Obstacle detection using ultrasonic sensors
-- **Real-time Alerts**: Immediate notifications when hazardous conditions are detected
+- **Environmental hazards**: Oxygen, CO2, CO, methane (CH4), and H2S
+- **Environmental conditions**: Temperature and humidity
+- **Location**: GPS coordinates, GPS fix freshness, and Wi-Fi zone positioning
+- **Operational state**: ESP32 connectivity, per-sensor status, microphone, and speaker status
+- **Safety response**: Threshold-based alerts, alert history, and a dedicated rescue view
 
 The system consists of three main components:
 1. **Arduino-based Hardware** - Sensor data collection via ESP32 microcontroller
@@ -41,30 +42,62 @@ The system consists of three main components:
 ## ⭐ Features
 
 ### Core Monitoring
-✅ **Real-time Sensor Data Streaming** - Live updates from multiple sensors with 3-second heartbeat
+✅ **Real-time Sensor Data Streaming** - The frontend polls the backend every 2 seconds and marks data stale after 10 seconds without a successful response
 ✅ **Multi-gas Detection** - Oxygen, CO2, CO, Methane (CH4), and Hydrogen Sulfide (H2S)
-✅ **Health Monitoring** - Heart rate tracking and temperature monitoring
-✅ **GPS Location Tracking** - Real-time miner positioning for rescue operations
-✅ **Obstacle Detection** - Ultrasonic sensor for proximity awareness
+✅ **Environmental Monitoring** - Temperature and humidity readings with per-sensor online/offline state
+✅ **GPS Location Tracking** - Coordinates, zone labels, live-fix state, and last-fix age
+✅ **Responsive Interface** - Dashboard layout adapts between desktop and mobile screens
 
 ### Safety & Alerts
 ✅ **Intelligent Alert System** - Three-tier alerting (Normal, Warning, Danger)
-✅ **Auto Audio Alerts** - Audio notifications when dangerous conditions detected
-✅ **Alert History** - Stores up to 1000 alerts for historical review
-✅ **Threshold-based Triggering** - Customizable gas and health thresholds
-✅ **Miner Health Profiles** - Individual health condition tracking
+✅ **Audio and System Status** - Displays microphone, speaker, ESP32, and backend stream state
+✅ **Alert History** - Keeps up to 1000 backend alerts and displays recent history in the dashboard
+✅ **Threshold-based Triggering** - Server-side warning and danger evaluation for gas readings
+✅ **Offline Handling** - Clears unsafe-to-display live values when the ESP32 or data stream is offline
 
 ### Rescue Operations
-✅ **Emergency Rescue Mode** - Dedicated rescue mission management
-✅ **Quick Location Data** - Immediate access to last known miner coordinates
-✅ **Mission Logging** - Track all rescue operations with timestamps and hazard levels
-✅ **Multi-miner Support** - Support for multiple miners with individual tracking
+✅ **Emergency Rescue View** - Dedicated rescue screen available from the sidebar
+✅ **Quick Location Data** - Exact zone, latitude, longitude, and links to external maps
+✅ **Rescue Time Estimate** - Estimates remaining rescue time from oxygen and harmful-gas severity
+✅ **Rescue Risk Indicators** - Harmful-gas cards and normal, watch, urgent, or unknown map states
 
 ### Data Management
-✅ **Historical Data Storage** - SQLite database with persistent sensor readings
-✅ **Trend Analysis** - Hourly averages for pattern detection
-✅ **Data Visualization** - Charts and gauges for easy interpretation
-✅ **Session Tracking** - Individual work session recording per miner
+✅ **Historical Data Storage** - SQLite persistence for sensor readings, alerts, miners, and sessions
+✅ **Trend Analysis** - Rolling frontend charts for oxygen, CO2, and CO
+✅ **Analytics API** - Historical readings, trends, hourly averages, and alert history endpoints
+✅ **Session Tracking** - New recording sessions are created after the configured telemetry gap
+
+## Dashboard Screens
+
+### Overview
+
+The Overview screen provides the operator's live safety picture:
+
+- Overall SAFE, WARNING, or DANGER state
+- Sensor cards for oxygen, CO2, CO, methane, H2S, temperature, and humidity
+- Rolling oxygen, CO2, and CO charts
+- Active alerts and scrollable alert history
+- GPS map with zone and live-fix information
+- Audio/communication and system status panels
+
+![Dashboard overview](./dashboard.jpg)
+
+### Dashboard reference image
+
+The repository also includes an earlier dashboard reference image showing the same monitoring concepts in an alternate visual treatment.
+
+![Dashboard reference](./Untitled.jpg)
+
+### Rescue
+
+The Rescue screen is opened from the sidebar and provides:
+
+- Exact miner location and zone
+- Links to Google Maps and OpenStreetMap
+- Estimated rescue time remaining, updated every second
+- Oxygen, temperature, and humidity vitals
+- CO, CO2, H2S, and CH4 risk cards
+- Urgency state for the rescue map and a GPS fallback when coordinates are unavailable
 
 ---
 
@@ -81,13 +114,13 @@ The system consists of three main components:
 │  • Oxygen Sensor  ──┬┼─→ Express.js Server (Port 4000)      │
 │  • CO2 Sensor     ──┤│    • CORS Enabled                     │
 │  • CO Sensor      ──┤│    • Real-time APIs                   │
-│  • CH4 Sensor     ──┤│    • WebSocket Support                │
+│  • CH4 Sensor     ──┤│    • Polling REST API                 │
 │  • H2S Sensor     ──┤│                                        │
 │  • Temp/Humidity  ──┤│    ┌─────────────────┐               │
 │  • GPS Module     ──┤│    │  SQLite DB      │               │
-│  • Ultrasonic     ──┤│    │ (helmet.db)     │               │
-│  • Heart Rate     ──┤│    │                 │               │
-│  • Buzzer Audio   ──┤│    │ • miners        │               │
+│  • Audio Status   ──┤│    │ (helmet.db)     │               │
+│                      │    │                 │               │
+│                      │    │ • miners        │               │
 │                      │    │ • sensors       │               │
 │                      │    │ • alerts        │               │
 │                      │    │ • sessions      │               │
@@ -106,7 +139,7 @@ The system consists of three main components:
             │ • Charts       │ REST API     │ Visualization       │
             │ • Alerts Panel │ (Port 4000)  │                     │
             │ • Map View     │              │                     │
-            │ • Rescue Mode  │              │                     │
+            │ • Rescue View  │              │                     │
             └────────────────┘              └─────────────────────┘
 ```
 
@@ -126,16 +159,15 @@ The system consists of three main components:
 | **CH₄ Sensor** | Methane | 0-100% LEL | MQ-4 |
 | **H₂S Sensor** | Hydrogen Sulfide | 0-100 ppm | MQ-136 |
 
-### Biometric Sensors
-- **Heart Rate Sensor** - Pulse monitoring
-- **Temperature Sensor** - Environmental & body temperature
+### Environmental Sensors
+- **Temperature Sensor** - Temperature monitoring
+- **Humidity Sensor** - Humidity monitoring
 
-### Location & Distance
+### Location
 - **GPS Module** - Geographic positioning
-- **Ultrasonic Sensor** - Obstacle detection
 
 ### Audio
-- **Buzzer** - Audio alert system for critical warnings
+- **Microphone and speaker status** - Communication hardware state reported by the helmet
 
 ---
 
@@ -159,6 +191,7 @@ smart-mining-helmet/
 │       │   ├── package.json
 │       │   ├── server.js         # Main server file
 │       │   ├── database-schema.md # DB structure documentation
+│       │   ├── zones.json         # Wi-Fi BSSID to zone mappings
 │       │   └── database/
 │       │       ├── init.js       # Database initialization
 │       │       └── queries.js    # Database query functions
@@ -191,7 +224,8 @@ smart-mining-helmet/
 │               │   └── Topbar.jsx          # Header information
 │               │
 │               ├── hooks/        # Custom React hooks
-│               │   └── useRealtimeData.js  # Real-time data streaming
+│               │   ├── useRealtimeData.js  # Polling and payload sanitization
+│               │   └── useStableMapUrl.js  # Stable map embed URL
 │               │
 │               └── utils/        # Utility functions
 │                   ├── status.js       # Status calculation logic
@@ -233,7 +267,7 @@ npm install
 - `vite` - Build tool
 - `tailwindcss` - Utility CSS framework
 - `chart.js` & `react-chartjs-2` - Data visualization
-- `leaflet` & `react-leaflet` - Map integration
+- Embedded OpenStreetMap - Map display and external map links
 
 ### One-Command Installation
 
@@ -280,21 +314,21 @@ npm run dev:frontend
 1. Ensure backend server is running
 2. Open browser to `http://localhost:5173`
 3. Dashboard displays:
-   - Real-time sensor readings
-   - Gas level gauges
-   - Health monitoring data
-   - Geographic location on map
-   - Active alerts panel
-   - Historical charts
+   - Live gas, temperature, and humidity readings
+   - SAFE, WARNING, or DANGER sensor states
+   - GPS location, zone, and fix freshness
+   - Active alerts and alert history
+   - Rolling oxygen, CO2, and CO charts
+   - Audio and system connectivity status
 
-### Emergency Rescue Mode
+### Rescue View
 
 1. Click **"Rescue"** button in sidebar
 2. System displays:
-   - Miner's last known GPS coordinates
-   - Current hazard levels
-   - Allows logging rescue missions
-   - Records hazard assessment data
+   - Miner's exact zone and last known coordinates
+   - Current harmful-gas and vital readings
+   - Estimated rescue time remaining
+   - A map with urgency state and external map links
 
 ---
 
@@ -308,27 +342,25 @@ http://localhost:4000
 ### Endpoints
 
 #### Sensor Data
-- **GET** `/api/sensor-readings` - Get historical sensor data
-- **POST** `/api/sensor-readings` - Submit new sensor reading
+- **GET** `/api/data` - Return the latest telemetry, sensor status, GPS metadata, alerts, and alert history
+- **POST** `/api/data` - Receive a telemetry payload from the ESP32
 
-#### Alerts
-- **GET** `/api/alerts` - Retrieve alert history
-- **POST** `/api/alerts` - Create new alert
-- **GET** `/api/alerts/active` - Get currently active alerts
+#### Health and Zones
+- **GET** `/health` - Return backend health status
+- **GET** `/api/zones` - Return configured and unmapped Wi-Fi zones
+- **POST** `/api/zones/reload` - Reload `backend/zones.json`
 
-#### Miners
+#### Analytics
+- **GET** `/api/analytics/sensors?minerId=MINER-001&hoursBack=24` - Historical sensor readings
+- **GET** `/api/analytics/trends?sensor=oxygen&hoursBack=24` - Sensor trend data
+- **GET** `/api/analytics/hourly-averages?sensor=oxygen&hoursBack=24` - Hourly averages
+- **GET** `/api/alerts/history?minerId=MINER-001&hoursBack=24` - Stored alert history
+
+#### Miners and Rescue
 - **GET** `/api/miners` - List all registered miners
-- **GET** `/api/miners/:minerId` - Get specific miner details
-- **PUT** `/api/miners/:minerId` - Update miner profile
-- **POST** `/api/miners/:minerId/session` - Start work session
-
-#### Rescue Operations
-- **POST** `/api/rescue-mission` - Create rescue mission
-- **GET** `/api/rescue-missions` - Get mission history
-
-#### Trends & Analytics
-- **GET** `/api/trends` - Get sensor trend data
-- **GET** `/api/hourly-averages` - Get hourly aggregated data
+- **GET** `/api/miners/:minerId/latest` - Get latest stored miner data
+- **POST** `/api/miners/:minerId/profile` - Update a miner profile
+- **POST** `/api/rescue/mission` - Create a rescue mission record
 
 ---
 
@@ -359,11 +391,9 @@ oxygen (REAL)           # Percentage
 co2 (REAL)              # ppm
 co (REAL)               # ppm
 ch4 (REAL)              # Percentage
-h2s (REAL)              # ppm
-heart_rate (REAL)       # BPM
+h2s (REAL)              # 0 = clear, 1 = warning, 2 = danger
 temperature (REAL)      # °C
 humidity (REAL)         # Percentage
-obstacle_distance (REAL) # cm
 latitude (REAL)
 longitude (REAL)
 created_at (TEXT)
@@ -433,12 +463,12 @@ created_at (TEXT)
 | Parameter | Warning Level | Danger Level |
 |-----------|---------------|--------------|
 | **Oxygen** | < 20.0% | < 19.5% |
-| **CO₂** | > 1500 ppm | > 2000 ppm |
-| **CO** | > 20 ppm | > 35 ppm |
+| **CO₂** | > 1600 ppm | > 3500 ppm |
+| **CO** | > 2 ppm | > 35 ppm |
 | **CH₄** | > 0.5% | > 1.0% |
-| **H₂S** | > 10 ppm | > 15 ppm |
+| **H₂S** | State 1 | State 2 |
 
-*Thresholds can be adjusted in `frontend/src/utils/thresholds.js`*
+*Thresholds can be adjusted in `frontend/src/utils/thresholds.js`. H2S is represented as a discrete sensor state: 0 = clear, 1 = warning, and 2 = danger.*
 
 ---
 
@@ -483,5 +513,5 @@ For issues, questions, or suggestions:
 
 ---
 
-**Last Updated:** May 3, 2026  
+**Last Updated:** October 22, 2026
 **Version:** 1.0.0
