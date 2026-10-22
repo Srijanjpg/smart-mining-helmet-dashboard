@@ -4,14 +4,14 @@ export default {
   theme: {
     extend: {
       colors: {
-        bg: "#0b1220",
-        panel: "#111a2d",
-        panelSoft: "#17233b",
-        safe: "#22c55e",
-        warn: "#f59e0b",
-        danger: "#ef4444",
-        textMain: "#e5ecff",
-        textSoft: "#9fb1d1"
+        bg: "#f3f6fb",
+        panel: "#ffffff",
+        panelSoft: "#f6f8fc",
+        safe: "#16a34a",
+        warn: "#d97706",
+        danger: "#dc2626",
+        textMain: "#0f172a",
+        textSoft: "#475569"
       }
     }
   },

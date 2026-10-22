@@ -7,9 +7,9 @@ export default function Topbar({ status, minerId }) {
   };
 
   return (
-    <div className="flex flex-wrap gap-3 items-center justify-between mb-4">
+    <div className="flex flex-wrap gap-3 items-center justify-between">
       <div>
-        <h2 className="text-2xl font-semibold">Miner Safety Overview</h2>
+        <h2 className="text-2xl font-semibold leading-tight">Miner Safety Overview</h2>
         <p className="text-textSoft text-sm">{minerId}</p>
       </div>
       <span className={`px-4 py-2 rounded-full border text-sm font-semibold ${map[status]}`}>

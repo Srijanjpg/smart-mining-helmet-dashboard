@@ -1,0 +1,6 @@
+{
+  "_comment": "Map access point BSSID (lowercase MAC) to a named location. Underground GPS does not work, so the strongest known AP determines the miner's zone. Find BSSIDs to add here via GET /api/zones -> unmapped[]. Keys starting with _ are ignored.",
+
+  "6E:0F:59:E3:ED:F3": "Surface(Zone 0)",
+  "0E:91:AC:61:4C:EF": "Zone 1"
+}

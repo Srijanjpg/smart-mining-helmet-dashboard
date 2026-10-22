@@ -1,34 +1,89 @@
 import { getDatabase, saveDatabase } from './init.js';
 
-export function insertSensorReading(minerId, sensorData, locationData) {
+// SQLite has no boolean type, so store 1/0 and leave unknown as NULL.
+function toFlag(value) {
+  if (value === true) return 1;
+  if (value === false) return 0;
+  return null;
+}
+
+export function insertSensorReading(minerId, sensorData, locationData, sessionId = null) {
   const db = getDatabase();
   const s = sensorData.sensors;
+  const st = sensorData.sensorStatus || {};
   const l = locationData;
 
   db.run(
     `INSERT INTO sensors (
-      timestamp, miner_id, oxygen, co2, co, ch4, h2s, 
-      heart_rate, temperature, humidity, obstacle_distance, 
-      latitude, longitude
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      timestamp, miner_id, session_id, zone, oxygen, co2, co, ch4, h2s,
+      heart_rate, temperature, humidity, obstacle_distance,
+      latitude, longitude,
+      oxygen_ok, co2_ok, co_ok, ch4_ok, h2s_ok,
+      temperature_ok, humidity_ok, gps_ok, gps_fix_ok
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       sensorData.timestamp,
       minerId,
+      sessionId,
+      sensorData.zone ?? null,
       s.oxygen ?? null,
       s.co2 ?? null,
       s.co ?? null,
       s.ch4 ?? null,
       s.h2s ?? null,
-      s.heartRate ?? null,
+      null, // heart_rate: out of scope, column kept for future use
       s.temperature ?? null,
       s.humidity ?? null,
-      s.obstacleDistance ?? null,
+      null, // obstacle_distance: out of scope, column kept for future use
       l?.lat ?? null,
-      l?.lng ?? null
+      l?.lng ?? null,
+      toFlag(st.oxygen),
+      toFlag(st.co2),
+      toFlag(st.co),
+      toFlag(st.ch4),
+      toFlag(st.h2s),
+      toFlag(st.temperature),
+      toFlag(st.humidity),
+      toFlag(st.gps),
+      toFlag(st.gpsFix)
     ]
   );
 
   saveDatabase();
+}
+
+// The firmware only ever reports MINER-001 today, but a second helmet would
+// otherwise trip the foreign key on sensors and silently drop every reading.
+export function ensureMiner(minerId) {
+  const db = getDatabase();
+  db.run(
+    'INSERT OR IGNORE INTO miners (miner_id, name, contact_info, health_profile) VALUES (?, ?, ?, ?)',
+    [minerId, minerId, '', '']
+  );
+}
+
+export function startSession(sessionId, minerId, startTime) {
+  const db = getDatabase();
+  ensureMiner(minerId);
+  db.run(
+    `INSERT OR REPLACE INTO sessions
+     (session_id, miner_id, start_time, end_time, location_count)
+     VALUES (?, ?, ?, ?, 0)`,
+    [sessionId, minerId, startTime, startTime]
+  );
+  saveDatabase();
+}
+
+// Keeps end_time current so a session's span is correct even if the helmet is
+// switched off without a clean shutdown.
+export function touchSession(sessionId, endTime, hasLocation) {
+  const db = getDatabase();
+  db.run(
+    `UPDATE sessions
+     SET end_time = ?, location_count = location_count + ?
+     WHERE session_id = ?`,
+    [endTime, hasLocation ? 1 : 0, sessionId]
+  );
 }
 
 export function insertAlert(alertId, minerId, alertData) {
@@ -41,6 +96,7 @@ export function insertAlert(alertId, minerId, alertData) {
   else if (message.includes('co2')) sensorType = 'co2';
   else if (message.includes('co ')) sensorType = 'co';
   else if (message.includes('methane')) sensorType = 'ch4';
+  else if (message.includes('h2s')) sensorType = 'h2s';
 
   db.run(
     `INSERT INTO alerts (
@@ -105,10 +161,8 @@ export function getSensorTrends(minerId, sensorName, hoursBack = 24) {
     co: 'co',
     ch4: 'ch4',
     h2s: 'h2s',
-    heartRate: 'heart_rate',
     temperature: 'temperature',
-    humidity: 'humidity',
-    obstacleDistance: 'obstacle_distance'
+    humidity: 'humidity'
   };
 
   const column = columnMap[sensorName];
@@ -139,10 +193,8 @@ export function getAverageByHour(minerId, sensorName, hoursBack = 24) {
     co: 'co',
     ch4: 'ch4',
     h2s: 'h2s',
-    heartRate: 'heart_rate',
     temperature: 'temperature',
-    humidity: 'humidity',
-    obstacleDistance: 'obstacle_distance'
+    humidity: 'humidity'
   };
 
   const column = columnMap[sensorName];
@@ -189,7 +241,7 @@ export function createRescueMission(missionId, minerId, sensorData, locationData
       s.co ?? null,
       s.ch4 ?? null,
       s.h2s ?? null,
-      s.heartRate ?? null,
+      null, // heart_rate: out of scope, column kept for future use
       hazardLevel,
       'pending'
     ]
@@ -199,13 +251,33 @@ export function createRescueMission(missionId, minerId, sensorData, locationData
 }
 
 function determinHazardLevel(sensors) {
+  const oxygen = Number.isFinite(sensors.oxygen) ? sensors.oxygen : null;
+  const co2 = Number.isFinite(sensors.co2) ? sensors.co2 : null;
+  const co = Number.isFinite(sensors.co) ? sensors.co : null;
+  const ch4 = Number.isFinite(sensors.ch4) ? sensors.ch4 : null;
+  const h2s = Number.isFinite(sensors.h2s) ? sensors.h2s : null;
+
   // Simple logic: if any danger-level threshold is breached, it's critical
-  if (sensors.oxygen < 19.5 || sensors.co2 > 2000 || sensors.co > 35 || sensors.ch4 > 1.0) {
+  if (
+    (oxygen !== null && oxygen < 19.5) ||
+    (co2 !== null && co2 > 3500) ||
+    (co !== null && co > 35) ||
+    (ch4 !== null && ch4 >= 1.0) ||
+    (h2s !== null && h2s >= 2)
+  ) {
     return 'critical';
   }
-  if (sensors.oxygen < 20.0 || sensors.co2 > 1500 || sensors.co > 20 || sensors.ch4 > 0.5) {
+
+  if (
+    (oxygen !== null && oxygen < 20.0) ||
+    (co2 !== null && co2 > 1600) ||
+    (co !== null && co > 2) ||
+    (ch4 !== null && ch4 >= 0.5) ||
+    (h2s !== null && h2s >= 1)
+  ) {
     return 'warning';
   }
+
   return 'normal';
 }
 

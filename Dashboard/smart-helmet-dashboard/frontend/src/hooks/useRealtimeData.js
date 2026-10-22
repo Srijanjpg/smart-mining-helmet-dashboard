@@ -11,18 +11,33 @@ const DEFAULT_DATA = {
   esp32Connected: false,
   minerId: "UNKNOWN",
   location: { lat: null, lng: null },
+  gpsMeta: {
+    hasFix: false,
+    fixFresh: false,
+    fixAgeMs: null
+  },
   sensors: {
     oxygen: null,
     co2: null,
     co: null,
     ch4: null,
     h2s: null,
-    heartRate: null,
     temperature: null,
-    humidity: null,
-    obstacleDistance: null
+    humidity: null
+  },
+  sensorStatus: {
+    oxygen: false,
+    co2: false,
+    co: false,
+    ch4: false,
+    h2s: false,
+    temperature: false,
+    humidity: false,
+    gps: false,
+    gpsFix: false
   },
   audio: { mic: null, speaker: null },
+  zone: null,
   alerts: [],
   alertHistory: []
 };
@@ -54,6 +69,17 @@ function sanitizeSensors(input) {
   return base;
 }
 
+function sanitizeSensorStatus(input) {
+  const base = { ...DEFAULT_DATA.sensorStatus };
+  if (!input || typeof input !== "object" || Array.isArray(input)) return base;
+
+  for (const [key, value] of Object.entries(input)) {
+    const parsed = toBooleanOrNull(value);
+    if (parsed !== null) base[key] = parsed;
+  }
+  return base;
+}
+
 function sanitizePayload(input) {
   const safe = input && typeof input === "object" && !Array.isArray(input) ? input : {};
 
@@ -68,14 +94,21 @@ function sanitizePayload(input) {
     timestamp:
       typeof safe.timestamp === "string" && safe.timestamp ? safe.timestamp : new Date().toISOString(),
     sensors: sanitizeSensors(safe.sensors),
+    sensorStatus: sanitizeSensorStatus(safe.sensorStatus),
     location: {
       lat,
       lng
+    },
+    gpsMeta: {
+      hasFix: safe.gpsMeta?.hasFix === true,
+      fixFresh: safe.gpsMeta?.fixFresh === true,
+      fixAgeMs: toFiniteNumber(safe.gpsMeta?.fixAgeMs)
     },
     audio: {
       mic: toBooleanOrNull(safe.audio?.mic),
       speaker: toBooleanOrNull(safe.audio?.speaker)
     },
+    zone: typeof safe.zone === "string" && safe.zone.trim() ? safe.zone.trim() : null,
     alerts: Array.isArray(safe.alerts) ? safe.alerts : [],
     alertHistory: Array.isArray(safe.alertHistory) ? safe.alertHistory : []
   };
@@ -120,7 +153,9 @@ export default function useRealtimeData() {
           safe = {
             ...safe,
             sensors: { ...DEFAULT_DATA.sensors },
+            sensorStatus: { ...DEFAULT_DATA.sensorStatus },
             location: { lat: null, lng: null },
+            zone: null,
             alerts: []
           };
         }
@@ -152,7 +187,9 @@ export default function useRealtimeData() {
           ...(prev || DEFAULT_DATA),
           esp32Connected: false,
           sensors: { ...DEFAULT_DATA.sensors },
+          sensorStatus: { ...DEFAULT_DATA.sensorStatus },
           location: { lat: null, lng: null },
+          zone: null,
           alerts: []
         }));
 

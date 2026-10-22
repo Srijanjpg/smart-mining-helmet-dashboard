@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Sidebar from "../components/Sidebar";
 import useRealtimeData from "../hooks/useRealtimeData";
+import useStableMapUrl from "../hooks/useStableMapUrl";
 import { getSensorLevel } from "../utils/status";
 
 function toFinite(value) {
@@ -17,6 +18,16 @@ function formatReading(value, unit = "", offline = false) {
   const n = toFinite(value);
   if (n === null) return "Unknown";
   return unit ? String(n) + " " + unit : String(n);
+}
+
+// H2S arrives as a discrete state from the Fermion MEMS sensor (0/1/2),
+// not as a ppm reading.
+function formatH2SState(value) {
+  const n = toFinite(value);
+  if (n === null) return "Unknown";
+  if (n >= 2) return "Danger";
+  if (n >= 1) return "Warning";
+  return "Clear";
 }
 
 function levelClass(level) {
@@ -54,10 +65,10 @@ function estimateRescueWindowMinutes(s) {
   }
 
   if (co !== null) {
-    if (co >= 200) risk += 6;
-    else if (co >= 100) risk += 4;
-    else if (co >= 35) risk += 2;
-    else if (co >= 20) risk += 1;
+    if (co > 35) risk += 4;
+    else if (co > 20) risk += 3;
+    else if (co > 10) risk += 2;
+    else if (co > 2) risk += 1;
   }
 
   if (co2 !== null) {
@@ -66,8 +77,16 @@ function estimateRescueWindowMinutes(s) {
     else if (co2 >= 1500) risk += 1;
   }
 
-  if (h2s !== null && h2s >= 10) risk += 3;
-  if (ch4 !== null && ch4 >= 1.0) risk += 2;
+  // h2s is a 0/1/2 state, not ppm. The old `h2s >= 10` test could never fire.
+  if (h2s !== null) {
+    if (h2s >= 2) risk += 4;
+    else if (h2s >= 1) risk += 2;
+  }
+
+  if (ch4 !== null) {
+    if (ch4 >= 1.0) risk += 4;
+    else if (ch4 >= 0.5) risk += 2;
+  }
 
   const minutes = 60 - risk * 6;
   return Math.max(5, Math.min(60, minutes));
@@ -115,14 +134,19 @@ export default function Rescue({ onOpenOverview }) {
     setDeadlineMs((prev) => (prev === null ? candidate : Math.min(prev, candidate)));
   }, [estimatedMinutes, data?.timestamp]);
 
+  const lat = toFinite(data?.location?.lat);
+  const lng = toFinite(data?.location?.lng);
+  const hasCoords = lat !== null && lng !== null;
+
+  // Must stay above the early return below -- every hook has to run on every
+  // render or React throws "rendered fewer hooks than expected".
+  const mapEmbedUrl = useStableMapUrl(lat, lng);
+
   if (loading && !data) {
-    return <div className="min-h-screen bg-bg text-textMain grid place-items-center">Loading rescue view...</div>;
+    return <div className="h-full bg-bg text-textMain grid place-items-center">Loading rescue view...</div>;
   }
 
   const s = data.sensors;
-  const lat = toFinite(data.location?.lat);
-  const lng = toFinite(data.location?.lng);
-  const hasCoords = lat !== null && lng !== null;
 
   const isOffline = !data.esp32Connected;
 
@@ -157,76 +181,81 @@ export default function Rescue({ onOpenOverview }) {
   const harmful = [
     { label: "CO", key: "co", value: s.co, unit: "ppm" },
     { label: "CO2", key: "co2", value: s.co2, unit: "ppm" },
-    { label: "H2S", key: "h2s", value: s.h2s, unit: "ppm" },
-    { label: "CH4", key: "ch4", value: s.ch4, unit: "" }
+    { label: "H2S", key: "h2s", value: s.h2s, unit: "", display: formatH2SState(s.h2s) },
+    { label: "CH4", key: "ch4", value: s.ch4, unit: "%" }
   ];
 
   const vitals = [
-    { label: "Heart Rate", value: s.heartRate, unit: "BPM" },
+    { label: "Oxygen", value: s.oxygen, unit: "%" },
     { label: "Temperature", value: s.temperature, unit: "C" },
-    { label: "Humidity", value: s.humidity, unit: "%" },
-    { label: "Oxygen", value: s.oxygen, unit: "%" }
+    { label: "Humidity", value: s.humidity, unit: "%" }
   ];
-
-  const mapEmbedUrl = useMemo(() => {
-    if (!hasCoords) return null;
-
-    const latDelta = 0.003;
-    const lngDelta = 0.003;
-    const left = lng - lngDelta;
-    const right = lng + lngDelta;
-    const top = lat + latDelta;
-    const bottom = lat - latDelta;
-
-    return `https://www.openstreetmap.org/export/embed.html?bbox=${left}%2C${bottom}%2C${right}%2C${top}&layer=mapnik&marker=${lat}%2C${lng}`;
-  }, [hasCoords, lat, lng]);
 
   function handleNavigate(id) {
     if (id === "overview") onOpenOverview?.();
   }
 
+  const banner = error
+    ? { tone: "border-warn/40 bg-warn/10 text-warn", text: `Live data fetch issue: ${error}. Showing last known values.` }
+    : stale
+    ? { tone: "border-danger/40 bg-danger/10 text-danger", text: "Data stream appears stale. Check ESP32 network and backend service." }
+    : null;
+
   return (
-    <div className="min-h-screen flex flex-col md:flex-row bg-bg">
+    <div className="md:h-full flex flex-col md:flex-row bg-bg overflow-hidden">
       <Sidebar activeSection="rescue" onNavigate={handleNavigate} />
 
-      <main className="flex-1 p-4 md:p-6 space-y-4">
-        <section className="bg-panel rounded-xl p-4 border border-slate-800">
-          <h2 className="text-2xl font-semibold">Rescue Command View</h2>
-          <p className="text-textSoft text-sm mt-1">Miner ID: {data.minerId}</p>
+      <main className="flex-1 min-w-0 flex flex-col gap-3 p-3 md:p-4 md:overflow-hidden">
+        <section className="shrink-0 bg-panel rounded-xl px-4 py-3 border border-slate-800">
+          <h2 className="text-2xl font-semibold leading-tight">Rescue Command View</h2>
+          <p className="text-textSoft text-sm mt-0.5">Miner ID: {data.minerId}</p>
         </section>
 
-        {error ? (
-          <div className="rounded-xl border border-warn/40 bg-warn/10 px-4 py-3 text-sm text-warn">
-            Live data fetch issue: {error}. Showing last known values.
+        {banner ? (
+          <div className={`shrink-0 rounded-xl border px-4 py-2.5 text-sm ${banner.tone}`}>
+            {banner.text}
           </div>
         ) : null}
 
-        {stale ? (
-          <div className="rounded-xl border border-danger/40 bg-danger/10 px-4 py-3 text-sm text-danger">
-            Data stream appears stale. Check ESP32 network and backend service.
-          </div>
-        ) : null}
-
-        <section className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        {/*
+          Vertical stack, but every band gets an explicit share rather than the
+          map being the sole flex-1 element -- that is what previously let it
+          swallow all the leftover height.
+        */}
+        <section className="shrink-0 grid grid-cols-1 xl:grid-cols-3 gap-3">
           <div className="bg-panel rounded-xl p-4 border border-slate-800">
             <h3 className="font-medium mb-3">Exact Location</h3>
-            <p className="text-sm">Latitude: <span className="text-textSoft">{lat !== null ? lat.toFixed(6) : "Unknown"}</span></p>
-            <p className="text-sm mt-1">Longitude: <span className="text-textSoft">{lng !== null ? lng.toFixed(6) : "Unknown"}</span></p>
-            {hasCoords ? (
-              <a
-                href={"https://maps.google.com/?q=" + lat + "," + lng}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-block mt-3 px-3 py-2 rounded-lg border border-slate-700 text-sm text-textMain hover:bg-panelSoft"
-              >
-                Open in Maps
-              </a>
-            ) : null}
+            <div className="space-y-2 text-sm">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-textSoft">Zone</span>
+                <span className={data.zone ? "text-textMain font-medium truncate" : "text-textSoft"}>
+                  {data.zone ?? "Unknown"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-textSoft">Latitude</span>
+                <span className="text-textMain">{lat !== null ? lat.toFixed(6) : "Unknown"}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-textSoft">Longitude</span>
+                <span className="text-textMain">{lng !== null ? lng.toFixed(6) : "Unknown"}</span>
+              </div>
+              {hasCoords ? (
+                <a
+                  href={"https://maps.google.com/?q=" + lat + "," + lng}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="self-start mt-1 px-3 py-1.5 rounded-lg border border-slate-700 text-sm text-textMain hover:bg-panelSoft"
+                >
+                  Open in Maps
+                </a>
+              ) : null}
+            </div>
           </div>
 
           <div className="bg-panel rounded-xl p-4 border border-slate-800">
             <h3 className="font-medium mb-3">Rescue Time Remaining</h3>
-            <p className="text-3xl font-semibold">
+            <p className="text-4xl font-semibold leading-none">
               {formatRemaining(remainingSec)}
             </p>
             <p className="text-xs text-textSoft mt-2">
@@ -247,26 +276,28 @@ export default function Rescue({ onOpenOverview }) {
           </div>
         </section>
 
-        <section className="bg-panel rounded-xl p-4 border border-slate-800">
+        <section className="shrink-0 bg-panel rounded-xl p-4 border border-slate-800">
           <h3 className="font-medium mb-3">Harmful Gases</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {harmful.map((g) => {
               const level = isOffline ? "unknown" : sensorLevel(g.key, g.value);
               return (
-                <div key={g.key} className={"rounded-lg border px-3 py-2 " + levelClass(level)}>
-                  <div className="flex items-center justify-between">
+                <div key={g.key} className={"rounded-lg border px-3 py-2.5 " + levelClass(level)}>
+                  <div className="flex items-center justify-between gap-2">
                     <span className="font-medium">{g.label}</span>
-                    <span className="text-xs uppercase">{level}</span>
+                    <span className="text-[10px] uppercase tracking-wide">{level}</span>
                   </div>
-                  <p className="text-sm mt-1">{formatReading(g.value, g.unit, isOffline)}</p>
+                  <p className="text-xl font-semibold mt-1 truncate">
+                    {isOffline ? "Sensor Offline" : g.display ?? formatReading(g.value, g.unit, isOffline)}
+                  </p>
                 </div>
               );
             })}
           </div>
         </section>
 
-        <section className={`bg-panel rounded-xl p-4 border ${mapPanelClass}`}>
-          <div className="flex items-center justify-between mb-3">
+        <section className={`flex-1 min-h-0 flex flex-col bg-panel rounded-xl p-4 border ${mapPanelClass}`}>
+          <div className="flex items-center justify-between mb-3 shrink-0">
             <div className="flex items-center gap-2">
               <h3 className="font-medium">Miner Location Map</h3>
               {mapUrgency === "critical" ? (
@@ -303,12 +334,12 @@ export default function Rescue({ onOpenOverview }) {
             <iframe
               title="Miner current location"
               src={mapEmbedUrl}
-              className={`w-full h-[340px] rounded-lg border ${mapFrameClass}`}
+              className={`w-full flex-1 min-h-0 rounded-lg border ${mapFrameClass}`}
               loading="lazy"
               referrerPolicy="no-referrer-when-downgrade"
             />
           ) : (
-            <div className={`h-[220px] rounded-lg border ${mapFrameClass} bg-panelSoft grid place-items-center text-sm text-textSoft`}>
+            <div className={`flex-1 min-h-0 rounded-lg border ${mapFrameClass} bg-panelSoft grid place-items-center text-sm text-textSoft`}>
               Location unavailable. Waiting for GPS coordinates.
             </div>
           )}
