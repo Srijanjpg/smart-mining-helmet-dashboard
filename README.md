@@ -82,12 +82,6 @@ The Overview screen provides the operator's live safety picture:
 
 ![Dashboard overview](./dashboard.jpg)
 
-### Dashboard reference image
-
-The repository also includes an earlier dashboard reference image showing the same monitoring concepts in an alternate visual treatment.
-
-![Dashboard reference](./Untitled.jpg)
-
 ### Rescue
 
 The Rescue screen is opened from the sidebar and provides:
